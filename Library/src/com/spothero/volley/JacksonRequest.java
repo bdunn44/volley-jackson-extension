@@ -43,7 +43,7 @@ public class JacksonRequest<T> extends Request<T> {
 
 	private Map<String, String> mParams;
 	private List<Integer> mAcceptedStatusCodes;
-	private final JacksonRequestListener<T> mListener;
+	protected final JacksonRequestListener<T> mListener;
 
 	public JacksonRequest(int method, String url, JacksonRequestListener<T> listener) {
 		this(DEFAULT_TIMEOUT, method, url, null, listener);
@@ -74,7 +74,10 @@ public class JacksonRequest<T> extends Request<T> {
 
 		mAcceptedStatusCodes = new ArrayList<Integer>();
 		mAcceptedStatusCodes.add(HttpStatus.SC_OK);
-		mAcceptedStatusCodes.add(HttpStatus.SC_NO_CONTENT);
+		mAcceptedStatusCodes.add(HttpStatus.SC_CREATED);
+		mAcceptedStatusCodes.add(HttpStatus.SC_ACCEPTED);
+        mAcceptedStatusCodes.add(HttpStatus.SC_NO_CONTENT);
+        mAcceptedStatusCodes.add(HttpStatus.SC_PARTIAL_CONTENT);
 
 		setRetryPolicy(new DefaultRetryPolicy(timeout, 1, 1));
 
@@ -180,9 +183,9 @@ public class JacksonRequest<T> extends Request<T> {
 		if (returnType != null) {
 			try {
 				if (response.data != null) {
-					returnData = OBJECT_MAPPER.readValue(response.data, returnType);
+					returnData = getObjectMapper().readValue(response.data, returnType);
 				} else if (response instanceof JacksonNetworkResponse) {
-					returnData = OBJECT_MAPPER.readValue(((JacksonNetworkResponse)response).inputStream, returnType);
+					returnData = getObjectMapper().readValue(((JacksonNetworkResponse)response).inputStream, returnType);
 				}
 			} catch (Exception e) {
 				VolleyLog.e(e, "An error occurred while parsing network response:");
