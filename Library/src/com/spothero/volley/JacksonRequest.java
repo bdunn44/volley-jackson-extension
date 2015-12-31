@@ -71,6 +71,7 @@ public class JacksonRequest<T> extends Request<T> {
 		setShouldCache(false);
 
 		mListener = listener;
+		mParams = params;
 
 		mAcceptedStatusCodes = new ArrayList<Integer>();
 		mAcceptedStatusCodes.add(HttpStatus.SC_OK);
@@ -80,10 +81,6 @@ public class JacksonRequest<T> extends Request<T> {
         mAcceptedStatusCodes.add(HttpStatus.SC_PARTIAL_CONTENT);
 
 		setRetryPolicy(new DefaultRetryPolicy(timeout, 1, 1));
-
-		if (method == Method.POST || method == Method.PUT) {
-			mParams = params;
-		}
 	}
 
 	/**

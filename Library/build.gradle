@@ -65,7 +65,7 @@ signing {
     }
 }
 
-/*uploadArchives {
+uploadArchives {
     repositories {
         mavenDeployer {
             if (project.hasProperty('sonatypeUsername') && project.hasProperty('sonatypePassword')) {
@@ -121,4 +121,4 @@ signing {
            }
         }
     }
-}*/
+}
