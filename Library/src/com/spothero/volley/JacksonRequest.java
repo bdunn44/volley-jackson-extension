@@ -71,7 +71,7 @@ public class JacksonRequest<T> extends Request<T> {
 		setShouldCache(false);
 
 		mListener = listener;
-		mParams = params;
+		mParams = params; 
 
 		mAcceptedStatusCodes = new ArrayList<Integer>();
 		mAcceptedStatusCodes.add(HttpStatus.SC_OK);
