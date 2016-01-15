@@ -102,7 +102,7 @@ public class JacksonNetwork implements Network {
 				if (((JacksonRequest)request).getAcceptedStatusCodes().contains(statusCode)) {
 					return new JacksonNetworkResponse(statusCode, data, inputStream, headers);
 				} else {
-					VolleyLog.d("Unacceptable statusCode: " + statusCode + " returned for url: " + request.getUrl());
+					VolleyLog.d("Unacceptable status code: " + statusCode + " returned for URL: " + request.getUrl());
 					throw new NetworkError(new JacksonNetworkResponse(statusCode, data, inputStream, headers));
 				}
 			}
