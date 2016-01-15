@@ -21,24 +21,31 @@ import com.android.volley.VolleyError;
 import com.fasterxml.jackson.databind.JavaType;
 
 public abstract class JacksonRequestListener<T> {
+
 	/**
-	 * Called when the network call has returned and the result has been parsed
+	 * Called when the network call has returned and the result has been parsed.
 	 *
 	 * @param response The parsed response, or null if an error occurred
 	 * @param statusCode The status code of the response
 	 * @param error The error that occurred, or null if successful
 	 */
-	public abstract void onResponse(T response, int statusCode, VolleyError error);
+    @Deprecated
+	public void onResponse(T response, int statusCode, VolleyError error) {  }
 
-	/**
-	 * Called by the library to get the {@link com.fasterxml.jackson.databind.JavaType}
-	 * used to parse the network response. For simple POJOs, return a
-	 * {@link com.fasterxml.jackson.databind.type.SimpleType}. For lists and arrays,
-	 * return one of the values constructed using {@link com.fasterxml.jackson.databind.type.TypeFactory}
-	 *
-	 * @return The type that the network response should be parsed into.
-	 */
-	public abstract JavaType getReturnType();
+    /**
+     * Called when the network call has returned and the result has been parsed.
+     *
+     * @param response The parsed response
+     */
+    public abstract void onSuccess(T response);
+
+    /**
+     * Called when an error occurred while processing the response.
+     *
+     * @param error The error that occurred
+     * @param statusCode The status code of the response
+     */
+    public abstract void onError(VolleyError error, int statusCode);
 
 	/**
 	 * Optional method that is called on the networking thread used to further process
