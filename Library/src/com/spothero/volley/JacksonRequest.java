@@ -16,6 +16,8 @@
 
 package com.spothero.volley;
 
+import android.util.Log;
+
 import com.android.volley.AuthFailureError;
 import com.android.volley.DefaultRetryPolicy;
 import com.android.volley.NetworkResponse;
@@ -25,53 +27,84 @@ import com.android.volley.Response;
 import com.android.volley.VolleyError;
 import com.android.volley.VolleyLog;
 import com.android.volley.toolbox.HttpHeaderParser;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.apache.http.HttpStatus;
 
+import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * This extension uses the Jackson library to serialize and deserialize request and response content.
+ * This implementation behaves as follows:
+ *     - GET request parameters are passed through the URL, with no body content.
+ *     - POST/PUT request bodies have JSON content.
+ *     - The same {@link com.fasterxml.jackson.databind.ObjectMapper} is used for serialization and deserialization.
+ *
+ * @param <T> The generic type used to parse response content.
+ */
 public class JacksonRequest<T> extends Request<T> {
 
 	private static final int DEFAULT_TIMEOUT = 30000; // 30 seconds
-	private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+	private static ObjectMapper OBJECT_MAPPER;
 
 	private Map<String, String> mParams;
+    private byte[] mBody;
 	private List<Integer> mAcceptedStatusCodes;
 	protected final JacksonRequestListener<T> mListener;
+    protected final JacksonTypeProvider mTypeProvider;
 
-	public JacksonRequest(int method, String url, JacksonRequestListener<T> listener) {
-		this(DEFAULT_TIMEOUT, method, url, null, listener);
+	public JacksonRequest(int method, String url, JacksonRequestListener<T> listener, JacksonTypeProvider typeProvider) {
+		this(DEFAULT_TIMEOUT, method, url, null, null, listener, typeProvider);
 	}
 
-	public JacksonRequest(int timeout, int method, String url, JacksonRequestListener<T> listener) {
-		this(timeout, method, url, null, listener);
+	public JacksonRequest(int timeout, int method, String url, JacksonRequestListener<T> listener, JacksonTypeProvider typeProvider) {
+		this(timeout, method, url, null, null, listener, typeProvider);
 	}
 
-	public JacksonRequest(int method, String baseUrl, String endpoint, Map<String, String> params, JacksonRequestListener<T> listener) {
-		this(DEFAULT_TIMEOUT, method, baseUrl, endpoint, params, listener);
+	public JacksonRequest(int method, String url, Map<String, String> params, JacksonRequestListener<T> listener, JacksonTypeProvider typeProvider) {
+		this(DEFAULT_TIMEOUT, method, url, params, null, listener, typeProvider);
 	}
 
-	public JacksonRequest(int timeout, int method, String baseUrl, String endpoint, Map<String, String> params, JacksonRequestListener<T> listener) {
-		this(timeout, method, getUrl(method, baseUrl, endpoint, params), params, listener);
-	}
+    public JacksonRequest(int timeout, int method, String url, Map<String, String> params, JacksonRequestListener<T> listener, JacksonTypeProvider typeProvider) {
+        this(timeout, method, url, params, null, listener, typeProvider);
+    }
 
-	public JacksonRequest(int method, String url, Map<String, String> params, JacksonRequestListener<T> listener) {
-		this(DEFAULT_TIMEOUT, method, url, params, listener);
-	}
+    public JacksonRequest(int method, String url, Object entity, JacksonRequestListener<T> listener, JacksonTypeProvider typeProvider) {
+        this(DEFAULT_TIMEOUT, method, url, null, entity, listener, typeProvider);
+    }
 
-	public JacksonRequest(int timeout, int method, String url, Map<String, String> params, JacksonRequestListener<T> listener) {
-		super(method, url, null);
+    public JacksonRequest(int timeout, int method, String url, T entity, JacksonRequestListener<T> listener, JacksonTypeProvider typeProvider) {
+        this(timeout, method, url, null, entity, listener, typeProvider);
+    }
+
+	protected JacksonRequest(int timeout, int method, String url, Map<String, String> params, Object entity, JacksonRequestListener<T> listener, JacksonTypeProvider typeProvider) {
+		super(method, toUrl(method, url, params), null);
 
 		setShouldCache(false);
-
 		mListener = listener;
-		mParams = params; 
+        mTypeProvider = typeProvider;
+        applyObjectMapperConfiguration(getObjectMapper());
+
+        System.out.println("Entity is: " + entity);
+        if (method == Method.GET) {
+            mParams = params;
+        } else if ((method == Method.PUT || method == Method.POST) && entity != null) {
+            try {
+                mBody = serializeEntity(entity);
+                System.out.println("Serialized body is: " + new String(mBody));
+            } catch (JsonProcessingException e) {
+                VolleyLog.e(e, "An error occurred while serializing the request body");
+                System.out.println("An error occurred while serializing the request body");
+                e.printStackTrace();
+            }
+        }
 
 		mAcceptedStatusCodes = new ArrayList<Integer>();
 		mAcceptedStatusCodes.add(HttpStatus.SC_OK);
@@ -84,16 +117,27 @@ public class JacksonRequest<T> extends Request<T> {
 	}
 
 	/**
-	 * Gets the ObjectMapper instance used when mapping network responses. Use this to customize the mapper in any way you see fit.
+	 * Gets the ObjectMapper singleton.
 	 *
-	 * @return The ObjectMapper instance used when mapping network responses
+	 * @return The ObjectMapper instance used when mapping network requests and responses
 	 */
 	public static ObjectMapper getObjectMapper() {
+        if (OBJECT_MAPPER == null) {
+            OBJECT_MAPPER = new ObjectMapper();
+        }
 		return OBJECT_MAPPER;
 	}
 
+    /**
+     * This method is executed upon instantiation and should be used to apply configuration to the mapper.
+     * It does not need to be called manually.
+     *
+     * @param mapper The ObjectMapper object returned by {@Link #getObjectMapper()}.
+     */
+    protected void applyObjectMapperConfiguration(ObjectMapper mapper) {  }
+
 	/**
-	 * Allows you to add additional status codes (besides 200 and 204) that will be parsed.
+	 * Allows you to add additional status codes (besides 2xx) that will be parsed.
 	 *
 	 * @param statusCodes An array of additional status codes to parse network responses for
 	 */
@@ -115,50 +159,42 @@ public class JacksonRequest<T> extends Request<T> {
 	}
 
 	/**
-	 * Converts a base URL, endpoint, and parameters into a full URL
-	 *
-	 * @param method The {@link com.android.volley.Request.Method} of the URL
-	 * @param baseUrl The base URL
-	 * @param endpoint The endpoint being hit
-	 * @param params The parameters to be appended to the URL if a GET method is used
-	 *
+	 * Converts a base URL and parameters into a full URL
+     *
+     * @param method The {@link com.android.volley.Request.Method} of the URL
+     * @param baseUrl The base URL
+     * @param params The parameters to be appended to the URL if a GET method is used
+     *
 	 * @return The full URL
 	 */
-	private static String getUrl(int method, String baseUrl, String endpoint, Map<String, String> params) {
-		if (params != null) {
-			for (Map.Entry<String, String> entry : params.entrySet()) {
-				if (entry.getValue() == null || entry.getValue().equals("null")) {
-					entry.setValue("");
-				}
-			}
-		}
-
+	private static String toUrl(int method, String baseUrl, Map<String, String> params) {
+		StringBuilder result = new StringBuilder();
 		if (method == Method.GET && params != null && !params.isEmpty()) {
-			final StringBuilder result = new StringBuilder(baseUrl + endpoint);
-			final int startLength = result.length();
-			for (String key : params.keySet()) {
-				try {
-					final String encodedKey = URLEncoder.encode(key, "UTF-8");
-					final String encodedValue = URLEncoder.encode(params.get(key), "UTF-8");
-					if (result.length() > startLength) {
-						result.append("&");
-					} else {
-						result.append("?");
-					}
-					result.append(encodedKey);
+            try {
+				for (Map.Entry<String, String> e : params.entrySet()) {
+					result.append(result.length() == 0 ? "?" : "&");
+					result.append(URLEncoder.encode(e.getKey(), "UTF-8"));
 					result.append("=");
-					result.append(encodedValue);
-				} catch (Exception e) { }
+					result.append(URLEncoder.encode(
+							e.getValue() == null || e.getValue().equals("null") ? "" : e.getValue(),
+							"UTF-8")
+					);
+				}
+			} catch (UnsupportedEncodingException e) {
+				// Ignore
 			}
-			return result.toString();
-		} else {
-			return baseUrl + endpoint;
 		}
+		return result.insert(0, baseUrl).toString();
 	}
+
+    protected byte[] serializeEntity(Object entity) throws JsonProcessingException {
+        return getObjectMapper().writeValueAsBytes(entity);
+    }
 
 	@Override
 	protected void deliverResponse(T response) {
 		mListener.onResponse(response, HttpStatus.SC_OK, null);
+        mListener.onSuccess(response);
 	}
 
 	@Override
@@ -171,11 +207,12 @@ public class JacksonRequest<T> extends Request<T> {
 		}
 
 		mListener.onResponse(null, statusCode, error);
+        mListener.onError(error, statusCode);
 	}
 
 	@Override
 	protected Response<T> parseNetworkResponse(NetworkResponse response) {
-		JavaType returnType = mListener.getReturnType();
+		JavaType returnType = mTypeProvider.getReturnType();
 		T returnData = null;
 		if (returnType != null) {
 			try {
@@ -197,15 +234,34 @@ public class JacksonRequest<T> extends Request<T> {
 		Map<String, String> headers = new HashMap<String, String>();
 		headers.put("Accept", "application/json");
 
-		if (getMethod() == Method.POST || getMethod() == Method.PUT) {
-			headers.put("Content-Type", "application/x-www-form-urlencoded; charset=utf8");
-		}
+		/*if (getMethod() == Method.POST || getMethod() == Method.PUT) {
+			headers.put("Content-Type", "application/json");
+		}*/
 
 		return headers;
 	}
 
+    /**
+     * Returns query parameters for GET requests.
+     *
+     * @return GET parameters
+     */
 	@Override
 	public Map<String, String> getParams() {
 		return mParams;
 	}
+
+    /**
+     * Returns request body for PUT and POST requests.
+     *
+     * @return
+     * @throws AuthFailureError
+     */
+    @Override
+    public byte[] getBody() throws AuthFailureError { return mBody; }
+
+    @Override
+    public String getBodyContentType() {
+        return getMethod() == Method.POST || getMethod() == Method.PUT ? "application/json" : null;
+    }
 }
